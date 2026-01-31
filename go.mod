@@ -1,3 +1,3 @@
-module proxy_checker
+module proxy-health-checker
 
 go 1.25.6
