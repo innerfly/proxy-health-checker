@@ -302,16 +302,11 @@ func main() {
 	}()
 
 	for result := range resultChan {
-		status := "✗ FAILED"
+		fmt.Printf("%s\n", result.Proxy)
 		if result.Healthy {
-			status = "✓ HEALTHY"
-		}
-
-		fmt.Printf("%s %s\n", status, result.Proxy)
-		if result.Healthy {
-			fmt.Printf("  Latency: %v\n", result.Latency)
+			fmt.Printf("  ✓ HEALTHY - Latency: %v\n", result.Latency)
 		} else {
-			fmt.Printf("  Error: %s\n", result.Error)
+			fmt.Printf("  ✗ FAILED - Error: %s\n", result.Error)
 		}
 		fmt.Println()
 	}
