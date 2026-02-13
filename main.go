@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -184,9 +185,52 @@ func checkSOCKS5Proxy(proxyURL string, testURL string, timeout time.Duration) Pr
 	return result
 }
 
+func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
+	start := time.Now()
+	result := ProxyResult{Proxy: proxyURL}
+
+	parsedProxy, err := url.Parse(proxyURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("parse error: %v", err)
+		return result
+	}
+
+	host := parsedProxy.Hostname()
+	port := parsedProxy.Port()
+	if port == "" {
+		port = "8443"
+	}
+
+	secret := parsedProxy.User.Username()
+	if secret == "" {
+		result.Error = "missing secret in MTProto URL"
+		return result
+	}
+
+	secretBytes, err := hex.DecodeString(secret)
+	if err != nil || len(secretBytes) != 16 {
+		result.Error = "invalid secret format (must be 32 hex chars)"
+		return result
+	}
+
+	address := net.JoinHostPort(host, port)
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	defer conn.Close()
+
+	result.Healthy = true
+	result.Latency = time.Since(start)
+	return result
+}
+
 func checkProxy(proxyURL string, testURL string, timeout time.Duration) ProxyResult {
 	if strings.HasPrefix(proxyURL, "socks5://") {
 		return checkSOCKS5Proxy(proxyURL, testURL, timeout)
+	} else if strings.HasPrefix(proxyURL, "mtproto://") {
+		return checkMTProtoProxy(proxyURL, timeout)
 	}
 	return checkHTTPProxy(proxyURL, testURL, timeout)
 }
