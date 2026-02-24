@@ -348,7 +348,7 @@ func main() {
 	for result := range resultChan {
 		fmt.Printf("%s\n", result.Proxy)
 		if result.Healthy {
-			fmt.Printf("  ✓ HEALTHY - Latency: %v\n", result.Latency)
+			fmt.Printf("  ✓ Latency: %v\n", result.Latency)
 		} else {
 			fmt.Printf("  ✗ FAILED - Error: %s\n", result.Error)
 		}
