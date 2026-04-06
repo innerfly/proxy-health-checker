@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -195,21 +196,52 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 		return result
 	}
 
-	host := parsedProxy.Hostname()
-	port := parsedProxy.Port()
-	if port == "" {
-		port = "8443"
-	}
+	var host string
+	port := "443"
+	var secret string
 
-	secret := parsedProxy.User.Username()
-	if secret == "" {
-		result.Error = "missing secret in MTProto URL"
+	switch {
+	case strings.HasPrefix(proxyURL, "tg://proxy"):
+		query := parsedProxy.Query()
+		host = query.Get("server")
+		if host == "" {
+			result.Error = "missing server in tg://proxy URL"
+			return result
+		}
+
+		if queryPort := query.Get("port"); queryPort != "" {
+			if _, err := strconv.Atoi(queryPort); err != nil {
+				result.Error = "invalid port in tg://proxy URL"
+				return result
+			}
+			port = queryPort
+		}
+
+		secret = query.Get("secret")
+		if secret == "" {
+			result.Error = "missing secret in tg://proxy URL"
+			return result
+		}
+	case strings.HasPrefix(proxyURL, "mtproto://"):
+		host = parsedProxy.Hostname()
+		port = parsedProxy.Port()
+		if port == "" {
+			port = "8443"
+		}
+
+		secret = parsedProxy.User.Username()
+		if secret == "" {
+			result.Error = "missing secret in MTProto URL"
+			return result
+		}
+	default:
+		result.Error = "unsupported MTProto URL format"
 		return result
 	}
 
 	secretBytes, err := hex.DecodeString(secret)
-	if err != nil || len(secretBytes) != 16 {
-		result.Error = "invalid secret format (must be 32 hex chars)"
+	if err != nil || len(secretBytes) < 16 {
+		result.Error = "invalid secret format (must be hex and at least 16 bytes)"
 		return result
 	}
 
@@ -229,7 +261,7 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 func checkProxy(proxyURL string, testURL string, timeout time.Duration) ProxyResult {
 	if strings.HasPrefix(proxyURL, "socks5://") {
 		return checkSOCKS5Proxy(proxyURL, testURL, timeout)
-	} else if strings.HasPrefix(proxyURL, "mtproto://") {
+	} else if strings.HasPrefix(proxyURL, "mtproto://") || strings.HasPrefix(proxyURL, "tg://proxy") {
 		return checkMTProtoProxy(proxyURL, timeout)
 	}
 	return checkHTTPProxy(proxyURL, testURL, timeout)
@@ -254,20 +286,19 @@ func loadEnv(filename string) error {
 			continue
 		}
 
-		// Check if line contains KEY=VALUE
-		if strings.Contains(line, "=") {
+		// Check if line starts a new KEY=VALUE entry
+		if key, value, ok := strings.Cut(line, "="); ok && !strings.ContainsAny(strings.TrimSpace(key), ":/?&") {
 			// Save previous key-value if exists
 			if currentKey != "" {
 				os.Setenv(currentKey, currentValue.String())
 			}
 
 			// Parse new key-value
-			parts := strings.SplitN(line, "=", 2)
-			currentKey = strings.TrimSpace(parts[0])
+			currentKey = strings.TrimSpace(key)
 			currentValue.Reset()
-			currentValue.WriteString(strings.TrimSpace(parts[1]))
+			currentValue.WriteString(strings.TrimSpace(value))
 		} else {
-			// Continuation line (no = sign)
+			// Continuation line
 			if currentKey != "" {
 				if currentValue.Len() > 0 {
 					currentValue.WriteString(",")
