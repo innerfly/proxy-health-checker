@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -258,9 +259,79 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 	return result
 }
 
+func checkVLESSProxy(proxyURL string, timeout time.Duration) ProxyResult {
+	start := time.Now()
+	result := ProxyResult{Proxy: proxyURL}
+
+	parsedProxy, err := url.Parse(proxyURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("parse error: %v", err)
+		return result
+	}
+
+	uuid := parsedProxy.User.Username()
+	if uuid == "" {
+		result.Error = "missing UUID in VLESS URL"
+		return result
+	}
+
+	host := parsedProxy.Hostname()
+	if host == "" {
+		result.Error = "missing host in VLESS URL"
+		return result
+	}
+
+	port := parsedProxy.Port()
+	if port == "" {
+		port = "443"
+	}
+
+	address := net.JoinHostPort(host, port)
+	conn, err := net.DialTimeout("tcp", address, timeout)
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	defer conn.Close()
+
+	security := parsedProxy.Query().Get("security")
+	if security == "tls" || security == "reality" {
+		sni := parsedProxy.Query().Get("sni")
+		if sni == "" {
+			sni = host
+		}
+
+		tlsConfig := &tls.Config{
+			ServerName: sni,
+		}
+
+		// For Reality, we need proper certificate verification
+		// For standard TLS, we're more lenient with self-signed certs
+		if security == "reality" {
+			tlsConfig.InsecureSkipVerify = false
+		} else {
+			tlsConfig.InsecureSkipVerify = true
+		}
+
+		tlsConn := tls.Client(conn, tlsConfig)
+		tlsConn.SetDeadline(time.Now().Add(timeout))
+		if err := tlsConn.Handshake(); err != nil {
+			result.Error = fmt.Sprintf("TLS handshake error: %v", err)
+			return result
+		}
+		defer tlsConn.Close()
+	}
+
+	result.Healthy = true
+	result.Latency = time.Since(start)
+	return result
+}
+
 func checkProxy(proxyURL string, testURL string, timeout time.Duration) ProxyResult {
 	if strings.HasPrefix(proxyURL, "socks5://") {
 		return checkSOCKS5Proxy(proxyURL, testURL, timeout)
+	} else if strings.HasPrefix(proxyURL, "vless://") {
+		return checkVLESSProxy(proxyURL, timeout)
 	} else if strings.HasPrefix(proxyURL, "mtproto://") || strings.HasPrefix(proxyURL, "tg://proxy") {
 		return checkMTProtoProxy(proxyURL, timeout)
 	}

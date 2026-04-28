@@ -1,10 +1,10 @@
 # Proxy Checker
 
-A lightweight Go tool to check the health and latency of HTTP, HTTPS, SOCKS5, and MTProto proxies.
+A lightweight Go tool to check the health and latency of HTTP, HTTPS, SOCKS5, MTProto, and VLESS proxies.
 
 ## Features
 
-- Supports HTTP, HTTPS, SOCKS5, and MTProto proxies
+- Supports HTTP, HTTPS, SOCKS5, MTProto, and VLESS proxies
 - Concurrent proxy testing
 - Configurable test URL
 - Authentication support (username/password)
@@ -23,7 +23,8 @@ A lightweight Go tool to check the health and latency of HTTP, HTTPS, SOCKS5, an
    http://username:password@proxy.example.com:80
    https://proxy.example.com:443
    socks5://proxy.example.com:1080
-   tg://proxy?server=tg.innerfly.ru&port=443&secret=eed598b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275
+   tg://proxy?server=tg.example.com&port=443&secret=eed598b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275
+   vless://07842c30-a056-4f60-a624-6a0d7ad5a4f2@vpn.example.com:443?type=tcp&encryption=none&security=reality&pbk=9OoQlQq62iGD33uJ9Q4_FY4chLxK1tQp43bGKDDFHlM&fp=chrome&sni=dzen.ru&sid=c8c8022a&spx=%2F#vless
 
    TEST_URL=google.com
    ```
@@ -43,7 +44,7 @@ A lightweight Go tool to check the health and latency of HTTP, HTTPS, SOCKS5, an
 Use Telegram MTProto proxy links in this format:
 
 ```text
-tg://proxy?server=tg.innerfly.ru&port=443&secret=eed598b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275
+tg://proxy?server=tg.example.com&port=443&secret=eed598b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275
 ```
 
 Required query parameters:
@@ -52,6 +53,30 @@ Required query parameters:
 
 Optional query parameters:
 - `port`: MTProto proxy port, defaults to `443`
+
+### VLESS format
+
+Use VLESS proxy links in this format:
+
+```text
+vless://<uuid>@<host>:<port>?type=<type>&encryption=<encryption>&security=<security>&pbk=<public_key>&fp=<fingerprint>&sni=<sni>&sid=<short_id>&spx=<spoofed_host>#<name>
+```
+
+Required components:
+- `uuid`: VLESS user ID (UUID format)
+- `host`: VLESS proxy hostname
+- `port`: VLESS proxy port (defaults to 443 if not specified)
+
+Optional query parameters:
+- `type`: Transport type (tcp, ws, grpc, etc.)
+- `encryption`: Encryption method (none, etc.)
+- `security`: Security layer (none, tls, reality)
+- `pbk`: Public key for TLS/Reality
+- `fp`: Fingerprint for TLS
+- `sni`: Server name indication for TLS
+- `sid`: Short ID for Reality
+- `spx`: Spoofed host header
+- `#name`: Optional name/remark for the proxy
 
 ## Output
 
