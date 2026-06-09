@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -150,6 +152,108 @@ func TestCheckVLESSProxy(t *testing.T) {
 	result = checkVLESSProxy(unreachableURL, timeout)
 	if result.Healthy {
 		t.Error("Expected unreachable proxy to be unhealthy")
+	}
+}
+
+func TestCheckMTProtoProxy(t *testing.T) {
+	timeout := 2 * time.Second
+
+	// Test 1: Valid MTProto proxy (simple obfuscation mode, no prefix)
+	secretPlain := "98b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275"
+	secretBytesPlain, _ := hex.DecodeString(secretPlain)
+	runMTProtoHandshakeTest(t, timeout, secretPlain, secretBytesPlain)
+
+	// Test 2: Valid MTProto proxy with 0xee prefix (DC-routed mode)
+	secretEE := "eed598b8895c9b2b43d67d931cd5fed7ab79616e6465782e7275"
+	secretBytesEE, _ := hex.DecodeString(secretEE[4:]) // skip ee + DC
+	runMTProtoHandshakeTest(t, timeout, secretEE, secretBytesEE)
+
+	// Test 3: Invalid handshake response (server sends garbage)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start mock server: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				frame := make([]byte, 64)
+				if _, err := io.ReadFull(c, frame); err != nil {
+					return
+				}
+				c.Write([]byte("garbage response"))
+			}(conn)
+		}
+	}()
+
+	badURL := fmt.Sprintf("tg://proxy?server=127.0.0.1&port=%d&secret=eed598b8895c9b2b43d67d931cd5fed7", ln.Addr().(*net.TCPAddr).Port)
+	result := checkMTProtoProxy(badURL, timeout)
+	if result.Healthy {
+		t.Error("Expected unhealthy proxy for invalid handshake response")
+	}
+
+	// Test 4: Unreachable host
+	unreachableURL := "tg://proxy?server=127.0.0.1&port=1&secret=eed598b8895c9b2b43d67d931cd5fed7"
+	result = checkMTProtoProxy(unreachableURL, timeout)
+	if result.Healthy {
+		t.Error("Expected unreachable proxy to be unhealthy")
+	}
+}
+
+func runMTProtoHandshakeTest(t *testing.T, timeout time.Duration, secretHex string, secretBytes []byte) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start mock server: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				c.SetDeadline(time.Now().Add(timeout))
+
+				frame := make([]byte, 64)
+				if _, err := io.ReadFull(c, frame); err != nil {
+					return
+				}
+
+				nonce := make([]byte, 4)
+				copy(nonce, frame[4:8])
+
+				for i := 8; i < 64; i++ {
+					frame[i] ^= secretBytes[(i-8)%len(secretBytes)]
+				}
+
+				response := make([]byte, 64)
+				if _, err := rand.Read(response); err != nil {
+					return
+				}
+				copy(response[0:4], nonce)
+
+				for i := 8; i < 64; i++ {
+					response[i] ^= secretBytes[(i-8)%len(secretBytes)]
+				}
+
+				c.Write(response)
+			}(conn)
+		}
+	}()
+
+	mtprotoURL := fmt.Sprintf("tg://proxy?server=127.0.0.1&port=%d&secret=%s", ln.Addr().(*net.TCPAddr).Port, secretHex)
+	result := checkMTProtoProxy(mtprotoURL, timeout)
+	if !result.Healthy {
+		t.Errorf("Expected healthy MTProto proxy (secret=%s), got error: %s", secretHex, result.Error)
 	}
 }
 
