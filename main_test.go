@@ -79,13 +79,8 @@ func TestCheckHTTPProxy(t *testing.T) {
 	timeout := 2 * time.Second
 
 	result := checkHTTPProxy(proxyURL, testURL, timeout)
-	// Note: In real life, checkHTTPProxy will fail because it tries to connect to example.com via the mock proxy
-	// but the mock proxy doesn't actually tunnel.
-	// However, if we just want to test if it tries to use the proxy, it's enough.
-	if !result.Healthy && !strings.Contains(result.Error, "connection refused") && !strings.Contains(result.Error, "EOF") {
-		// It's expected to fail if example.com is not reachable or if proxy doesn't tunnel
-		// But let's just see what happens.
-		t.Logf("Result: %+v", result)
+	if !result.Healthy {
+		t.Errorf("Expected healthy proxy, got error: %s", result.Error)
 	}
 }
 
@@ -150,8 +145,8 @@ func TestCheckVLESSProxy(t *testing.T) {
 		t.Errorf("Expected UUID error, got: %+v", result)
 	}
 
-	// Test 4: Unreachable host
-	unreachableURL := "vless://07842c30-a056-4f60-a624-6a0d7ad5a4f2@192.0.2.1:443?type=tcp#test"
+	// Test 4: Unreachable host (connection refused)
+	unreachableURL := "vless://07842c30-a056-4f60-a624-6a0d7ad5a4f2@127.0.0.1:1?type=tcp#test"
 	result = checkVLESSProxy(unreachableURL, timeout)
 	if result.Healthy {
 		t.Error("Expected unreachable proxy to be unhealthy")

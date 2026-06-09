@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -101,7 +102,7 @@ func checkSOCKS5Proxy(proxyURL string, testURL string, timeout time.Duration) Pr
 
 	// Read response
 	buf := make([]byte, 2)
-	if _, err := conn.Read(buf); err != nil {
+	if _, err := io.ReadFull(conn, buf); err != nil {
 		result.Error = fmt.Sprintf("handshake response error: %v", err)
 		return result
 	}
@@ -125,7 +126,7 @@ func checkSOCKS5Proxy(proxyURL string, testURL string, timeout time.Duration) Pr
 		}
 
 		authResp := make([]byte, 2)
-		if _, err := conn.Read(authResp); err != nil {
+		if _, err := io.ReadFull(conn, authResp); err != nil {
 			result.Error = fmt.Sprintf("auth response error: %v", err)
 			return result
 		}
@@ -161,7 +162,10 @@ func checkSOCKS5Proxy(proxyURL string, testURL string, timeout time.Duration) Pr
 	// Convert port string to bytes
 	var portBytes [2]byte
 	portNum := 80
-	fmt.Sscanf(port, "%d", &portNum)
+	if _, err := fmt.Sscanf(port, "%d", &portNum); err != nil {
+		result.Error = fmt.Sprintf("invalid port: %v", err)
+		return result
+	}
 	portBytes[0] = byte(portNum >> 8)
 	portBytes[1] = byte(portNum & 0xFF)
 	connectReq = append(connectReq, portBytes[:]...)
@@ -172,7 +176,7 @@ func checkSOCKS5Proxy(proxyURL string, testURL string, timeout time.Duration) Pr
 	}
 
 	connectResp := make([]byte, 4)
-	if _, err := conn.Read(connectResp); err != nil {
+	if _, err := io.ReadFull(conn, connectResp); err != nil {
 		result.Error = fmt.Sprintf("connect response error: %v", err)
 		return result
 	}
@@ -305,8 +309,6 @@ func checkVLESSProxy(proxyURL string, timeout time.Duration) ProxyResult {
 			ServerName: sni,
 		}
 
-		// For Reality, we need proper certificate verification
-		// For standard TLS, we're more lenient with self-signed certs
 		if security == "reality" {
 			tlsConfig.InsecureSkipVerify = false
 		} else {
@@ -319,7 +321,7 @@ func checkVLESSProxy(proxyURL string, timeout time.Duration) ProxyResult {
 			result.Error = fmt.Sprintf("TLS handshake error: %v", err)
 			return result
 		}
-		defer tlsConn.Close()
+		tlsConn.Close()
 	}
 
 	result.Healthy = true
@@ -450,9 +452,9 @@ func main() {
 	for result := range resultChan {
 		fmt.Printf("%s\n", result.Proxy)
 		if result.Healthy {
-			fmt.Printf("  \033[32m✓\033[0m Latency: %v\n", result.Latency)
-		} else {
-			fmt.Printf("  ✗ FAILED - Error: %s\n", result.Error)
+		fmt.Printf("  \033[32m✓\033[0m Latency: %v\n", result.Latency)
+	} else {
+		fmt.Printf("  \033[31m✗ FAILED\033[0m - Error: %s\n", result.Error)
 		}
 		fmt.Println()
 	}
