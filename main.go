@@ -2,10 +2,7 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/rand"
 	"crypto/tls"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -205,7 +202,6 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 
 	var host string
 	port := "443"
-	var secret string
 
 	switch {
 	case strings.HasPrefix(proxyURL, "tg://proxy"):
@@ -223,42 +219,14 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 			}
 			port = queryPort
 		}
-
-		secret = query.Get("secret")
-		if secret == "" {
-			result.Error = "missing secret in tg://proxy URL"
-			return result
-		}
 	case strings.HasPrefix(proxyURL, "mtproto://"):
 		host = parsedProxy.Hostname()
 		port = parsedProxy.Port()
 		if port == "" {
 			port = "8443"
 		}
-
-		secret = parsedProxy.User.Username()
-		if secret == "" {
-			result.Error = "missing secret in MTProto URL"
-			return result
-		}
 	default:
 		result.Error = "unsupported MTProto URL format"
-		return result
-	}
-
-	secretBytes, err := hex.DecodeString(secret)
-	if err != nil {
-		result.Error = "invalid secret format (must be hex)"
-		return result
-	}
-
-	// DC-routed mode: secret starts with byte 0xee, second byte is DC ID
-	if len(secretBytes) >= 2 && secretBytes[0] == 0xee {
-		secretBytes = secretBytes[2:]
-	}
-
-	if len(secretBytes) < 16 {
-		result.Error = "invalid secret (must be at least 16 bytes after decoding)"
 		return result
 	}
 
@@ -268,63 +236,7 @@ func checkMTProtoProxy(proxyURL string, timeout time.Duration) ProxyResult {
 		result.Error = err.Error()
 		return result
 	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(timeout))
-
-	// TLS obfuscation mode: secret starts with byte 0xdd
-	if secretBytes[0] == 0xdd {
-		tlsConfig := &tls.Config{
-			ServerName:         host,
-			InsecureSkipVerify: true,
-		}
-		tlsConn := tls.Client(conn, tlsConfig)
-		if err := tlsConn.Handshake(); err != nil {
-			result.Error = fmt.Sprintf("TLS handshake error: %v", err)
-			return result
-		}
-		result.Healthy = true
-		result.Latency = time.Since(start)
-		return result
-	}
-
-	// Standard obfuscation: perform MTProto obfuscation handshake (64-byte frame exchange)
-	frame := make([]byte, 64)
-	if _, err := rand.Read(frame); err != nil {
-		result.Error = fmt.Sprintf("random error: %v", err)
-		return result
-	}
-
-	frame[0] = 0xef
-	frame[1] = 0xef
-	frame[2] = 0xef
-	frame[3] = 0xef
-
-	nonce := make([]byte, 4)
-	copy(nonce, frame[4:8])
-
-	for i := 8; i < 64; i++ {
-		frame[i] ^= secretBytes[(i-8)%len(secretBytes)]
-	}
-
-	if _, err := conn.Write(frame); err != nil {
-		result.Error = fmt.Sprintf("write error: %v", err)
-		return result
-	}
-
-	response := make([]byte, 64)
-	if _, err := io.ReadFull(conn, response); err != nil {
-		result.Error = fmt.Sprintf("handshake response error: %v", err)
-		return result
-	}
-
-	for i := 8; i < 64; i++ {
-		response[i] ^= secretBytes[(i-8)%len(secretBytes)]
-	}
-
-	if !bytes.Equal(response[0:4], nonce) {
-		result.Error = "invalid handshake response"
-		return result
-	}
+	conn.Close()
 
 	result.Healthy = true
 	result.Latency = time.Since(start)
