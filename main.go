@@ -430,7 +430,7 @@ func main() {
 	}()
 
 	for result := range resultChan {
-		fmt.Printf("%s\n", result.Proxy)
+		fmt.Printf("%s\n", string([]rune(result.Proxy)[:min(180, len([]rune(result.Proxy)))]))
 		if result.Healthy {
 		fmt.Printf("  \033[32m✓\033[0m Latency: %v\n", result.Latency)
 	} else {
