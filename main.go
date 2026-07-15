@@ -54,8 +54,7 @@ func main() {
 		wg.Add(1)
 		go func(p string) {
 			defer wg.Done()
-			result := checkProxy(p, testURL, timeout)
-			resultChan <- result
+			resultChan <- checkProxy(p, testURL, timeout)
 		}(proxy)
 	}
 
