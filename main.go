@@ -65,11 +65,12 @@ func main() {
 	}()
 
 	for result := range resultChan {
-		fmt.Printf("%s\n", string([]rune(result.Proxy)[:min(180, len([]rune(result.Proxy)))]))
 		if result.Healthy {
-			fmt.Printf("  \033[32m✓\033[0m Latency: %v\n", result.Latency)
+			fmt.Printf("\033[32m✓\033[0m %s\n", string([]rune(result.Proxy)[:min(180, len([]rune(result.Proxy)))]))
+			fmt.Printf("  Latency: %v\n", result.Latency)
 		} else {
-			fmt.Printf("  \033[31m✗ FAILED\033[0m - Error: %s\n", result.Error)
+			fmt.Printf("\033[31m✗\033[0m %s\n", string([]rune(result.Proxy)[:min(180, len([]rune(result.Proxy)))]))
+			fmt.Printf("  Error: %s\n", result.Error)
 		}
 	}
 }
